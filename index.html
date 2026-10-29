@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Biorreactor Bioetanol | Panel de Control IoT</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- MQTT.js CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @keyframes pulse-slow {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .animate-pulse-slow {
+      animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans">
+
+  <!-- Navbar -->
+  <header class="bg-slate-800/80 backdrop-blur border-b border-slate-700 sticky top-0 z-50 px-4 py-3 sm:px-6">
+    <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-3">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
+          <i class="fa-solid fa-flask-vial text-xl"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-white tracking-wide">Biorreactor Bioetanol (Hojas de Plátano)</h1>
+          <p class="text-xs text-slate-400">Monitoreo y Control IoT ESP32 / MQTT</p>
+        </div>
+      </div>
+      
+      <!-- Estado de Conexión -->
+      <div class="flex items-center gap-3">
+        <div id="status-badge" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+          <span id="status-dot" class="w-2 h-2 rounded-full bg-rose-500"></span>
+          <span id="status-text">Desconectado</span>
+        </div>
+        <button id="btn-config" class="text-slate-400 hover:text-white p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition" title="Configurar Conexión MQTT">
+          <i class="fa-solid fa-gear"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Modal de Configuración MQTT -->
+  <div id="modal-config" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-emerald-400"></i> Parámetros Broker MQTT (WSS)
+        </h3>
+        <button id="btn-close-modal" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+      <p class="text-xs text-slate-400 mb-4">
+        GitHub Pages requiere WebSockets Seguros (WSS). Puedes usar el broker público de prueba o tu instancia de HiveMQ Cloud / EMQX.
+      </p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Host WSS</label>
+          <input type="text" id="cfg-host" value="broker.emqx.io" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Puerto WSS</label>
+            <input type="number" id="cfg-port" value="8084" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Ruta (Path)</label>
+            <input type="text" id="cfg-path" value="/mqtt" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Topic Telemetría (ESP32 -> Web)</label>
+          <input type="text" id="cfg-topic-data" value="bioreactor/platano/datos" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Topic Comandos (Web -> ESP32)</label>
+          <input type="text" id="cfg-topic-cmd" value="bioreactor/platano/control" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+        </div>
+      </div>
+      <div class="mt-6 flex justify-end gap-3">
+        <button id="btn-save-connect" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 px-4 rounded-lg text-sm transition">
+          Guardar y Reconectar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor Principal -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+
+    <!-- Tarjetas de Variables en Vivo -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Temperatura -->
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs uppercase font-semibold text-slate-400 tracking-wider">Temperatura</p>
+            <div class="mt-2 flex items-baseline gap-1">
+              <span id="val-temp" class="text-3xl font-extrabold text-amber-400">--.-</span>
+              <span class="text-sm font-semibold text-slate-400">°C</span>
+            </div>
+          </div>
+          <div class="p-3 bg-amber-500/10 text-amber-400 rounded-xl">
+            <i class="fa-solid fa-temperature-half text-xl"></i>
+          </div>
+        </div>
+        <div class="mt-3 text-xs flex justify-between items-center text-slate-400">
+          <span>Óptimo: 30.0 - 32.5 °C</span>
+          <span id="temp-alert" class="hidden text-amber-400 font-bold">¡Fuera de rango!</span>
+        </div>
+      </div>
+
+      <!-- pH -->
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs uppercase font-semibold text-slate-400 tracking-wider">Nivel de pH</p>
+            <div class="mt-2 flex items-baseline gap-1">
+              <span id="val-ph" class="text-3xl font-extrabold text-cyan-400">--.-</span>
+              <span class="text-sm font-semibold text-slate-400">pH</span>
+            </div>
+          </div>
+          <div class="p-3 bg-cyan-500/10 text-cyan-400 rounded-xl">
+            <i class="fa-solid fa-droplet text-xl"></i>
+          </div>
+        </div>
+        <div class="mt-3 text-xs flex justify-between items-center text-slate-400">
+          <span>Óptimo: 4.5 - 5.5 (Levadura)</span>
+          <span id="ph-alert" class="hidden text-cyan-400 font-bold">¡Atención!</span>
+        </div>
+      </div>
+
+      <!-- Presión -->
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs uppercase font-semibold text-slate-400 tracking-wider">Presión Biorreactor</p>
+            <div class="mt-2 flex items-baseline gap-1">
+              <span id="val-press" class="text-3xl font-extrabold text-purple-400">--.-</span>
+              <span class="text-sm font-semibold text-slate-400">hPa / PSI</span>
+            </div>
+          </div>
+          <div class="p-3 bg-purple-500/10 text-purple-400 rounded-xl">
+            <i class="fa-solid fa-gauge-high text-xl"></i>
+          </div>
+        </div>
+        <div class="mt-3 text-xs flex justify-between items-center text-slate-400">
+          <span>Monitoreo de Gas CO₂</span>
+          <span id="press-status" class="text-slate-400 font-medium">Normal</span>
+        </div>
+      </div>
+
+      <!-- Estado Celdas Peltier -->
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs uppercase font-semibold text-slate-400 tracking-wider">Celdas Peltier</p>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span id="val-peltier-status" class="text-xl font-bold text-slate-300">INACTIVA</span>
+              <span id="val-peltier-pwm" class="text-xs text-slate-400">(0%)</span>
+            </div>
+          </div>
+          <div id="peltier-icon-box" class="p-3 bg-slate-700 text-slate-400 rounded-xl transition">
+            <i class="fa-solid fa-snowflake text-xl"></i>
+          </div>
+        </div>
+        <div class="mt-3 text-xs flex justify-between items-center text-slate-400">
+          <span id="peltier-mode-badge">Modo: Auto PID</span>
+          <span id="peltier-action-text" class="text-emerald-400">En reposo</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Sección de Gráficos y Panel de Control -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Gráficos Históricos (2 Columnas) -->
+      <div class="lg:col-span-2 space-y-6">
+        
+        <!-- Gráfica Temperatura y pH -->
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+              <i class="fa-solid fa-chart-line text-emerald-400"></i> Historial de Temperatura y pH
+            </h3>
+            <span class="text-xs text-slate-400">Últimas 30 muestras</span>
+          </div>
+          <div class="h-64">
+            <canvas id="chart-temp-ph"></canvas>
+          </div>
+        </div>
+
+        <!-- Gráfica de Presión -->
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+              <i class="fa-solid fa-chart-area text-purple-400"></i> Presión Interna del Reactor
+            </h3>
+            <span class="text-xs text-slate-400">Acumulación de CO₂</span>
+          </div>
+          <div class="h-44">
+            <canvas id="chart-press"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Panel de Control Térmico (1 Columna) -->
+      <div class="space-y-6">
+        
+        <!-- Tarjeta de Control -->
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg space-y-5">
+          <h3 class="text-base font-bold text-white border-b border-slate-700 pb-3 flex items-center gap-2">
+            <i class="fa-solid fa-microchip text-emerald-400"></i> Consignas y Control Térmico
+          </h3>
+
+          <!-- Setpoint de Temperatura -->
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="text-xs font-semibold text-slate-300">Temperatura Deseada (Setpoint)</label>
+              <span id="disp-setpoint" class="text-sm font-bold text-emerald-400">31.0 °C</span>
+            </div>
+            <input type="range" id="input-setpoint" min="20" max="45" step="0.5" value="31.0" class="w-full accent-emerald-500 cursor-pointer">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>20°C</span>
+              <span>Óptimo Sacarificación/Fermentación (30-32°C)</span>
+              <span>45°C</span>
+            </div>
+          </div>
+
+          <!-- Modo de Control -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-2">Modo del Sistema Peltier</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="btn-mode-auto" class="py-2 px-3 rounded-xl text-xs font-bold transition bg-emerald-600 text-white shadow-lg shadow-emerald-900/30">
+                <i class="fa-solid fa-robot mr-1"></i> Automático (PID)
+              </button>
+              <button id="btn-mode-manual" class="py-2 px-3 rounded-xl text-xs font-bold transition bg-slate-700 text-slate-300 hover:bg-slate-600">
+                <i class="fa-solid fa-hand mr-1"></i> Manual
+              </button>
+            </div>
+          </div>
+
+          <!-- Controles Manuales (Oculto en Automático) -->
+          <div id="manual-controls" class="space-y-3 pt-3 border-t border-slate-700 hidden">
+            <label class="block text-xs font-semibold text-slate-300">Acción Manual Peltier</label>
+            <div class="grid grid-cols-3 gap-2">
+              <button id="btn-act-cool" class="py-2 px-2 bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white rounded-lg text-xs font-semibold border border-blue-500/30 transition">
+                <i class="fa-solid fa-snowflake block mb-1"></i> Enfriar
+              </button>
+              <button id="btn-act-stop" class="py-2 px-2 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition">
+                <i class="fa-solid fa-power-off block mb-1"></i> Apagar
+              </button>
+              <button id="btn-act-heat" class="py-2 px-2 bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white rounded-lg text-xs font-semibold border border-rose-500/30 transition">
+                <i class="fa-solid fa-fire block mb-1"></i> Calentar
+              </button>
+            </div>
+          </div>
+
+          <!-- Botón de Envío de Comando -->
+          <button id="btn-send-cmd" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20">
+            <i class="fa-solid fa-paper-plane"></i> Enviar Parámetros al ESP32
+          </button>
+        </div>
+
+        <!-- Información del Proceso (Hojas de Plátano) -->
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg space-y-3 text-xs text-slate-300">
+          <h4 class="font-bold text-emerald-400 flex items-center gap-2">
+            <i class="fa-solid fa-leaf"></i> Proceso Bioetanol de Plátano
+          </h4>
+          <ul class="space-y-1.5 list-disc list-inside text-slate-400">
+            <li><strong class="text-slate-200">Pretratamiento/Hidrólisis:</strong> Degradación de celulosa y hemicelulosa a azúcares fermentables.</li>
+            <li><strong class="text-slate-200">Fermentación:</strong> Mantener temperatura a 30-32°C. El sobrecalentamiento (>38°C) inhibe la levadura.</li>
+            <li><strong class="text-slate-200">Presión:</strong> Indica desprendimiento de CO₂ (actividad fermentativa anaerobia).</li>
+          </ul>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Consola de Logs / Eventos -->
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg">
+      <div class="flex justify-between items-center mb-2">
+        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+          <i class="fa-solid fa-terminal text-slate-500"></i> Registro de Comunicaciones MQTT
+        </h4>
+        <button id="btn-clear-logs" class="text-[11px] text-slate-500 hover:text-slate-300">Limpiar</button>
+      </div>
+      <div id="log-box" class="h-28 bg-slate-950 rounded-xl p-3 font-mono text-[11px] text-slate-400 overflow-y-auto space-y-1 border border-slate-800">
+        <div>[Sistema] Esperando conexión con broker MQTT...</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-slate-900 border-t border-slate-800 text-center py-4 text-xs text-slate-500">
+    Biorreactor IoT para Bioetanol • Sistema con ESP32, MQTT y Celdas Peltier • GitHub Pages
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
