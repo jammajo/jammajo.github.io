@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Biorreactor de Fermentación de Etanol | Dashboard MQTT</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Chart.js para gráficos en tiempo real -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Paho MQTT sobre WebSockets (WSS) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+</head>
+<body>
+  <div class="dashboard-container">
+    <header class="header">
+      <div class="header-info">
+        <h1>🌾 Biorreactor de Fermentación de Etanol</h1>
+        <p class="subtitle">Sustrato: Hojas de Plátano | Monitoreo en Tiempo Real</p>
+      </div>
+      <div class="status-badges">
+        <span id="badge-mqtt" class="badge badge-disconnected">WSS Desconectado</span>
+        <span id="badge-esp32" class="badge badge-offline">ESP32 Offline</span>
+      </div>
+    </header>
+
+    <!-- Tarjetas de Métricas -->
+    <section class="cards-grid">
+      <!-- Temperatura Actual -->
+      <div class="card card-temp">
+        <div class="card-header">
+          <h3>Temperatura Actual</h3>
+          <span class="sensor-id">DS18B20</span>
+        </div>
+        <div class="card-body">
+          <div class="temp-display">
+            <span id="val-temperatura">--.-</span>
+            <span class="unit">°C</span>
+          </div>
+          <div class="target-range">
+            <span>Rango Óptimo: <strong>28°C - 32°C</strong> (Meta: 30°C)</span>
+          </div>
+          <div id="temp-alert" class="temp-alert alert-neutral">Esperando telemetría...</div>
+        </div>
+      </div>
+
+      <!-- Estado de la Celda Peltier -->
+      <div class="card card-peltier">
+        <div class="card-header">
+          <h3>Control Térmico</h3>
+          <span class="sensor-id">Celdas Peltier + Relé</span>
+        </div>
+        <div class="card-body">
+          <div class="indicator-icon" id="peltier-icon">❄️/🔥</div>
+          <div class="status-name" id="val-peltier">En espera</div>
+          <p class="card-desc" id="peltier-desc">Regulación automática por histéresis</p>
+        </div>
+      </div>
+
+      <!-- Estado del Motor NEMA 17 y Control de RPM -->
+      <div class="card card-motor">
+        <div class="card-header">
+          <h3>Agitador de Fermentación</h3>
+          <span class="sensor-id">NEMA 17 + L298N</span>
+        </div>
+        <div class="card-body">
+          <div class="indicator-icon" id="motor-icon">⚙️</div>
+          <div class="status-name" id="val-motor">En espera</div>
+          <p class="card-desc">Ciclos anti-calentamiento (15s On / 45s Off)</p>
+
+          <!-- Control de Velocidad RPM -->
+          <div class="rpm-control-box">
+            <div class="rpm-header">
+              <span class="rpm-label">Velocidad Agitación:</span>
+              <span class="rpm-value-display"><strong id="rpm-display">30</strong> RPM</span>
+            </div>
+            <div class="slider-container">
+              <input type="range" id="slider-rpm" min="0" max="100" step="5" value="30">
+            </div>
+            <div class="rpm-actions">
+              <button id="btn-set-rpm" class="btn-primary">Aplicar RPM</button>
+              <button id="btn-stop-motor" class="btn-danger-sm">Parar</button>
+            </div>
+            <span id="rpm-feedback" class="feedback-text">RPM actual en reactor: --</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Gráfica de Temperatura en Vivo -->
+    <section class="chart-section card">
+      <div class="card-header">
+        <h3>Historial Térmico en Tiempo Real</h3>
+        <span class="last-update" id="txt-last-update">Última actualización: --:--:--</span>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="tempChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Terminal de Logs MQTT -->
+    <section class="logs-section card">
+      <div class="card-header">
+        <h3>Telemetría Serial & MQTT (Raw JSON)</h3>
+        <button id="btn-clear-logs" class="btn-sm">Limpiar</button>
+      </div>
+      <div class="logs-console" id="logs-console">
+        <div class="log-entry system">[SISTEMA] Iniciando cliente MQTT sobre WSS...</div>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
